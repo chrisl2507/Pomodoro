@@ -46,6 +46,9 @@ export async function morningMultiplier(): Promise<number | null> {
 }
 
 // (c) 14-day focus trend — the sparkline
+// Deliberate deviation from the handoff SQL: the window boundary uses
+// 'localtime' so "last 14 days" means the user's days, not UTC's —
+// matching how started_local itself is derived. Same in (g) below.
 export type TrendDay = {
   local_day: string
   focused_minutes: number | null
@@ -60,7 +63,7 @@ export async function focusTrend14d(): Promise<TrendDay[]> {
         SUM(completed)                                           AS completed_sessions
     FROM sessions
     WHERE session_kind = 'focus'
-      AND date(started_local) >= date('now', '-14 days')
+      AND date(started_local) >= date('now', 'localtime', '-14 days')
     GROUP BY local_day
     ORDER BY local_day`)
 }
@@ -142,7 +145,7 @@ export async function headline14d(): Promise<Headline> {
     FROM sessions
     WHERE session_kind = 'focus'
       AND ended_utc IS NOT NULL
-      AND date(started_local) >= date('now', '-14 days')`)
+      AND date(started_local) >= date('now', 'localtime', '-14 days')`)
   return rows[0] ?? { total_hours_14d: null, completion_pct_14d: null }
 }
 
@@ -157,8 +160,8 @@ export async function headlinePrev14d(): Promise<Headline> {
     FROM sessions
     WHERE session_kind = 'focus'
       AND ended_utc IS NOT NULL
-      AND date(started_local) >= date('now', '-28 days')
-      AND date(started_local) <  date('now', '-14 days')`)
+      AND date(started_local) >= date('now', 'localtime', '-28 days')
+      AND date(started_local) <  date('now', 'localtime', '-14 days')`)
   return rows[0] ?? { total_hours_14d: null, completion_pct_14d: null }
 }
 

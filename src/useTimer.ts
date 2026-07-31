@@ -55,6 +55,69 @@ function nextPhase(finished: Phase, todayCompletedAfter: number): Phase {
   return todayCompletedAfter % SETTINGS.sessionsPerCycle === 0 ? 'long_break' : 'short_break'
 }
 
+type InitResult = Pick<
+  EngineState,
+  'phase' | 'sessionUuid' | 'taskLabel' | 'endAt' | 'pausedLeftMs'
+>
+
+const IDLE_FOCUS: InitResult = {
+  phase: 'focus',
+  sessionUuid: null,
+  taskLabel: '',
+  endAt: null,
+  pausedLeftMs: phaseDurationMs('focus'),
+}
+
+/* Launch sequence as a module singleton: the janitor and any retroactive
+   completion write to the event log, so they must run exactly once even
+   when StrictMode mounts the hook twice. Failures degrade to an idle
+   timer instead of blocking the splash. */
+let initPromise: Promise<InitResult> | null = null
+
+function initEngine(): Promise<InitResult> {
+  if (initPromise) return initPromise
+  initPromise = (async (): Promise<InitResult> => {
+    await abandonStaleSessions()
+    const open = await findOpenSession()
+    if (!open) return IDLE_FOCUS
+
+    const plannedMs = open.plannedMinutes * 60_000
+    if (open.pausedSinceMs !== null) {
+      const usedMs = open.pausedSinceMs - open.startedAtMs - open.pausedMsBefore
+      return {
+        phase: open.kind,
+        sessionUuid: open.sessionUuid,
+        taskLabel: open.taskLabel ?? '',
+        endAt: null,
+        pausedLeftMs: Math.max(0, plannedMs - usedMs),
+      }
+    }
+
+    const endAt = open.startedAtMs + plannedMs + open.pausedMsBefore
+    if (endAt > Date.now()) {
+      return {
+        phase: open.kind,
+        sessionUuid: open.sessionUuid,
+        taskLabel: open.taskLabel ?? '',
+        endAt,
+        pausedLeftMs: plannedMs,
+      }
+    }
+
+    // The phase ran out while the app was gone: complete it retroactively
+    // at its real end time (the OS-scheduled notification already told the
+    // user), then land idle on the next phase.
+    await appendEvent(open.sessionUuid, 'complete', new Date(endAt))
+    const today = await todayStats()
+    const phase = nextPhase(open.kind, today.completedSessions)
+    return { ...IDLE_FOCUS, phase, pausedLeftMs: phaseDurationMs(phase) }
+  })().catch((err) => {
+    console.warn('span init degraded to idle timer', err)
+    return IDLE_FOCUS
+  })
+  return initPromise
+}
+
 export function useTimer(): TimerSnapshot {
   const engine = useRef<EngineState>({
     ready: false,
@@ -103,42 +166,14 @@ export function useTimer(): TimerSnapshot {
     await refreshStats()
   }
 
-  // — init: janitor, then adopt any open session from the event log —
+  // — init: the shared launch sequence, then adopt its result —
   useEffect(() => {
     let cancelled = false
-    ;(async () => {
-      await abandonStaleSessions()
-      const open = await findOpenSession()
+    initEngine().then((result) => {
       if (cancelled) return
-      if (open) {
-        const plannedMs = open.plannedMinutes * 60_000
-        if (open.pausedSinceMs !== null) {
-          const usedMs = open.pausedSinceMs - open.startedAtMs - open.pausedMsBefore
-          commit({
-            ready: true,
-            phase: open.kind,
-            sessionUuid: open.sessionUuid,
-            taskLabel: open.taskLabel ?? '',
-            endAt: null,
-            pausedLeftMs: Math.max(0, plannedMs - usedMs),
-          })
-        } else {
-          const endAt = open.startedAtMs + plannedMs + open.pausedMsBefore
-          commit({
-            ready: true,
-            phase: open.kind,
-            sessionUuid: open.sessionUuid,
-            taskLabel: open.taskLabel ?? '',
-            endAt,
-            pausedLeftMs: plannedMs,
-          })
-          if (endAt <= Date.now()) await completePhase(endAt)
-        }
-      } else {
-        commit({ ready: true })
-      }
-      await refreshStats()
-    })()
+      commit({ ...result, ready: true })
+      refreshStats().catch(() => {})
+    })
     return () => {
       cancelled = true
     }
@@ -151,9 +186,11 @@ export function useTimer(): TimerSnapshot {
     if (s.endAt !== null && s.endAt <= now) {
       if (busy.current) return
       busy.current = true
-      completePhase(s.endAt).finally(() => {
-        busy.current = false
-      })
+      completePhase(s.endAt)
+        .catch((err) => console.warn('span completion write failed', err))
+        .finally(() => {
+          busy.current = false
+        })
       return
     }
     const leftMs = s.endAt !== null ? s.endAt - now : s.pausedLeftMs
@@ -214,9 +251,11 @@ export function useTimer(): TimerSnapshot {
           await scheduleCompletion(endAt, completionBody(cur.phase))
           commit({ sessionUuid, endAt })
         }
-      })().finally(() => {
-        busy.current = false
-      })
+      })()
+        .catch((err) => console.warn('span event write failed', err))
+        .finally(() => {
+          busy.current = false
+        })
     },
 
     setTaskLabel: (label: string) => commit({ taskLabel: label }),

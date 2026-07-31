@@ -1,5 +1,6 @@
 import initSqlJs, { type Database } from 'sql.js'
 import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url'
+import { BRAND } from '../brand'
 import { SCHEMA_SQL } from './schema'
 import type { SpanDb, SqlValue } from './db'
 
@@ -8,7 +9,7 @@ import type { SpanDb, SqlValue } from './db'
    for a tab close. This is the dev/browser implementation — on device the
    Capacitor SQLite plugin owns storage. */
 
-const IDB_NAME = 'span-db'
+const IDB_NAME = `${BRAND.name}-db`
 const IDB_STORE = 'sqlite'
 const IDB_KEY = 'main'
 const PERSIST_DEBOUNCE_MS = 250

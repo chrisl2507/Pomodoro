@@ -35,11 +35,16 @@
         </provider>
     </application>
 
-    <!-- Permissions -->
+    <!-- Permissions.
+         No INTERNET permission: the app is local-first and makes no network
+         calls; its absence makes that verifiable at install time. Re-add
+         temporarily if using Capacitor live-reload during development. -->
 
-    <uses-permission android:name="android.permission.INTERNET" />
     <!-- Session-completion notifications must land on time, not whenever
-         the OS batches inexact alarms (Android 12+). -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+         the OS batches inexact alarms. USE_EXACT_ALARM is auto-granted and
+         Play-permitted for timer apps (which this is); SCHEDULE_EXACT_ALARM
+         covers Android 12-13 where USE_EXACT_ALARM doesn't exist. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="33" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

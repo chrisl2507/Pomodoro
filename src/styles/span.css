@@ -289,6 +289,161 @@ body {
   cursor: default;
 }
 
+/* — insights screen — */
+
+.insights {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 18px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.insights-scope {
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.insights-empty {
+  margin: auto;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.metric-row {
+  display: flex;
+  gap: 10px;
+}
+
+.metric-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+}
+
+.metric-value {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 22px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.metric-label {
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.metric-delta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.metric-delta--good {
+  color: var(--positive); /* the palette's one green — stats arrows only */
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+}
+
+.panel-title {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.sparkline {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.sparkline-base {
+  stroke: var(--hairline);
+  stroke-width: 1;
+}
+
+.sparkline-line {
+  fill: none;
+  stroke: var(--accent); /* live data */
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.sparkline-dot {
+  fill: var(--accent);
+}
+
+.heatmap-row {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 3px;
+}
+
+.heat-cell {
+  aspect-ratio: 1;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--hairline) 55%, var(--surface));
+}
+.heat-cell--1 {
+  background: var(--heat-1);
+}
+.heat-cell--2 {
+  background: var(--heat-2);
+}
+.heat-cell--3 {
+  background: var(--heat-3);
+}
+
+.heat-axis {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 6px;
+  font-size: 10px;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+}
+
+.sentences {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 2px 8px;
+}
+
+.sentence {
+  margin: 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--hairline);
+  font-size: 13px;
+  color: var(--text);
+}
+
 /* — splash — */
 
 .splash {

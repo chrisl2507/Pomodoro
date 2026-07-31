@@ -12,7 +12,7 @@ const InsightsScreen = lazy(() =>
 type Tab = 'focus' | 'insights'
 type ThemeChoice = 'dark' | 'paper'
 
-const THEME_KEY = 'span-theme'
+const THEME_KEY = `${BRAND.name}-theme`
 
 function initialTheme(): ThemeChoice {
   try {

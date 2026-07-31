@@ -21,11 +21,30 @@ function isCapacitorNative(): boolean {
   return Boolean(w.Capacitor?.isNativePlatform?.())
 }
 
+/* If the real store cannot open (WASM blocked, IndexedDB unavailable, a
+   broken plugin), the app degrades to an ephemeral timer instead of
+   hanging on the splash: writes vanish, reads are empty. The failure is
+   cached only for this launch, so the next launch retries the real store. */
+function nullDb(): SpanDb {
+  return {
+    async run() {},
+    async query() {
+      return []
+    },
+    async flush() {},
+  }
+}
+
 export function getDb(): Promise<SpanDb> {
   if (!instance) {
-    instance = isCapacitorNative()
-      ? import('./nativeDb').then((m) => m.openNativeDb())
-      : import('./webDb').then((m) => m.openWebDb())
+    instance = (
+      isCapacitorNative()
+        ? import('./nativeDb').then((m) => m.openNativeDb())
+        : import('./webDb').then((m) => m.openWebDb())
+    ).catch((err) => {
+      console.warn('span db unavailable, running without persistence', err)
+      return nullDb()
+    })
   }
   return instance
 }

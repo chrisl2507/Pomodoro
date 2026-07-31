@@ -61,7 +61,7 @@ export function fireNow(body: string): void {
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
   if (document.hasFocus()) return
   try {
-    new Notification(BRAND.name, { body, tag: 'span-phase' })
+    new Notification(BRAND.name, { body, tag: `${BRAND.name}-phase` })
   } catch {
     /* some platforms only allow notifications from service workers */
   }

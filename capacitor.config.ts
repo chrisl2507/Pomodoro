@@ -6,11 +6,6 @@ const config: CapacitorConfig = {
   appId: 'com.span.app',
   appName: 'span',
   webDir: 'dist',
-  plugins: {
-    LocalNotifications: {
-      smallIcon: 'ic_stat_notify',
-    },
-  },
 }
 
 export default config

@@ -1,6 +1,5 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8" ?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -8,7 +7,6 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
-
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
             android:name=".MainActivity"
@@ -16,12 +14,10 @@
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
             android:exported="true">
-
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-
         </activity>
 
         <provider
@@ -29,17 +25,20 @@
             android:authorities="${applicationId}.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths"></meta-data>
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
     </application>
 
-    <!-- Permissions -->
+    <!-- Permissions.
+         No INTERNET permission: the app is local-first and makes no network
+         calls; its absence makes that verifiable at install time. Re-add
+         temporarily if using Capacitor live-reload during development. -->
 
-    <uses-permission android:name="android.permission.INTERNET" />
     <!-- Session-completion notifications must land on time, not whenever
-         the OS batches inexact alarms (Android 12+). -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+         the OS batches inexact alarms. USE_EXACT_ALARM is auto-granted and
+         Play-permitted for timer apps (which this is); SCHEDULE_EXACT_ALARM
+         covers Android 12-13 where USE_EXACT_ALARM doesn't exist. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="33" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

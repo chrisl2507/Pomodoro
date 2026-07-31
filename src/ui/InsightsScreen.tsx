@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { exportEvents, exportEventsCsv } from '../db/events'
 import { loadInsights, type InsightsData } from './insightsData'
 import type { TrendDay, HourBucket } from '../db/queries'
 
@@ -110,6 +111,35 @@ function Heatmap({ hours }: { hours: HourBucket[] }) {
   )
 }
 
+/* The user-facing backup: the events table itself, copied to the
+   clipboard as JSON or CSV — works identically in browsers and WebViews. */
+function ExportRow() {
+  const [copied, setCopied] = useState<'json' | 'csv' | null>(null)
+
+  const copy = (kind: 'json' | 'csv') => async () => {
+    try {
+      const text = kind === 'json' ? await exportEvents() : await exportEventsCsv()
+      await navigator.clipboard.writeText(text)
+      setCopied(kind)
+      setTimeout(() => setCopied(null), 1600)
+    } catch {
+      /* clipboard denied — nothing to report beyond the unchanged label */
+    }
+  }
+
+  return (
+    <div className="export-row">
+      <span className="export-label">export data</span>
+      <button type="button" className="export-btn" onClick={copy('json')}>
+        {copied === 'json' ? 'copied' : 'json'}
+      </button>
+      <button type="button" className="export-btn" onClick={copy('csv')}>
+        {copied === 'csv' ? 'copied' : 'csv'}
+      </button>
+    </div>
+  )
+}
+
 export function InsightsScreen({ refreshKey }: { refreshKey: number }) {
   const [data, setData] = useState<InsightsData | null>(null)
 
@@ -129,6 +159,7 @@ export function InsightsScreen({ refreshKey }: { refreshKey: number }) {
     return (
       <main className="insights">
         <p className="insights-empty">No sessions yet. Insights build as you focus.</p>
+        <ExportRow />
       </main>
     )
   }
@@ -174,6 +205,8 @@ export function InsightsScreen({ refreshKey }: { refreshKey: number }) {
           ))}
         </section>
       )}
+
+      <ExportRow />
     </main>
   )
 }

@@ -43,8 +43,18 @@ exactly where the wall clock says. Known v1 quirk: on Android, finishing a
 session with the app foregrounded shows the scheduled notification too.
 
 Backup is platform-native (Android Auto Backup via `allowBackup`; iOS
-device backup covers the app container) and `exportEvents()` produces the
-user-facing JSON export — the event log is the backup format.
+device backup covers the app container), and the Insights screen exports
+the events table to the clipboard as JSON or CSV — the event log is the
+backup format. The app requests no `INTERNET` permission on Android:
+local-first is verifiable at install time. Exact-alarm permissions
+(`USE_EXACT_ALARM` for 14+, `SCHEDULE_EXACT_ALARM` for 12–13) keep
+completion notifications on time.
+
+App icons and splash screens are generated from `assets/` (the spec's
+`s_` monogram on the accent tile) via `npx capacitor-assets generate`.
+They're programmatic renders of JetBrains Mono — good enough to ship a
+beta; the spec ultimately wants optically corrected outlines from design.
+The iOS alternate icon (paid-tier perk) is not yet implemented.
 
 ## Architecture
 

@@ -1,0 +1,72 @@
+/* Backdrop picker swatches — miniature previews of each scene, painted
+   with the same ramp values the scenes use. #1b1d2c / #1e2131 / #23263c are
+   scene grounds from the design (between --color-bg and --color-surface);
+   the tokens don't carry them. */
+
+.swatch--aurora {
+  background:
+    linear-gradient(
+      100deg,
+      transparent 8%,
+      var(--color-accent-700) 34%,
+      var(--color-section-ghost) 52%,
+      var(--color-section-glow) 66%,
+      transparent 92%
+    ),
+    #1b1d2c;
+}
+
+.swatch--stars {
+  background:
+    radial-gradient(1.4px 1.4px at 28% 30%, var(--color-neutral-100), transparent),
+    radial-gradient(1.2px 1.2px at 68% 24%, var(--color-accent-300), transparent),
+    radial-gradient(1.2px 1.2px at 46% 66%, var(--color-neutral-300), transparent),
+    radial-gradient(1px 1px at 80% 74%, var(--color-neutral-400), transparent),
+    radial-gradient(ellipse at 30% 60%, var(--color-accent-900), #1b1d2c 70%);
+}
+
+.swatch--grid {
+  background:
+    linear-gradient(
+      to bottom,
+      #1b1d2c 46%,
+      color-mix(in srgb, var(--color-accent) 75%, transparent) 47%,
+      #23263c 48%
+    ),
+    linear-gradient(
+        to right,
+        color-mix(in srgb, var(--color-accent) 35%, transparent) 1px,
+        transparent 1px
+      )
+      0 0/7px 7px;
+}
+
+.swatch--ember {
+  background:
+    radial-gradient(1.6px 1.6px at 34% 40%, var(--color-accent-300), transparent),
+    radial-gradient(1.4px 1.4px at 66% 26%, var(--color-accent-400), transparent),
+    radial-gradient(ellipse 80% 50% at 50% 108%, var(--color-accent-700), #1b1d2c 74%);
+}
+
+.swatch--rain {
+  background:
+    repeating-linear-gradient(
+      12deg,
+      color-mix(in srgb, var(--color-neutral-300) 45%, transparent) 0 3px,
+      transparent 3px 7px
+    ),
+    linear-gradient(#1e2131, #1b1d2c);
+}
+
+.swatch--rings {
+  background:
+    radial-gradient(
+      circle at 50% 50%,
+      transparent 0 22%,
+      color-mix(in srgb, var(--color-accent) 55%, transparent) 23% 25%,
+      transparent 26% 44%,
+      color-mix(in srgb, var(--color-accent) 30%, transparent) 45% 47%,
+      transparent 48%
+    ),
+    #1b1d2c;
+}

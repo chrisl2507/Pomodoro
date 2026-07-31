@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { BACKDROPS } from './backdrops'
-import { SETTINGS, phaseDurationMs, type BackdropId, type Phase } from './settings'
+import { SETTINGS, type BackdropId, type Phase } from './settings'
+import { loadState, saveState } from './storage'
+import { useTimer } from './useTimer'
 
 const RING_RADIUS = 172
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS // 1080.7
@@ -33,15 +35,33 @@ function useWallClock(): string {
 
 export default function App() {
   const clockText = useWallClock()
-  const [phase, setPhase] = useState<Phase>('focus')
-  const [backdrop, setBackdrop] = useState<BackdropId>(SETTINGS.defaultBackdrop)
+  const timer = useTimer()
+  const [backdrop, setBackdrop] = useState<BackdropId>(() => loadState().backdrop)
 
-  // Stage 1: static screen — the timer engine lands in stage 2.
-  const totalMs = phaseDurationMs(phase)
-  const leftMs = totalMs
-  const running = false
-  const completed = 0
-  const focusMinutesDone = 0
+  const pickBackdrop = (id: BackdropId) => {
+    setBackdrop(id)
+    saveState({ backdrop: id })
+  }
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      if (target && /input|textarea|select/i.test(target.tagName)) return
+      if (e.code === 'Space') {
+        e.preventDefault()
+        timer.toggle()
+      } else if (e.key === 'r' || e.key === 'R') {
+        timer.reset()
+      } else if (e.key === 's' || e.key === 'S') {
+        timer.skip()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  const { phase, running, leftMs, totalMs, completed, flash } = timer
+  const glowing = SETTINGS.glow && running
 
   const progress = 1 - leftMs / totalMs
   const dashOffset = RING_CIRCUMFERENCE * (1 - progress)
@@ -57,6 +77,16 @@ export default function App() {
         ? 'long break'
         : 'short break'
       : 'focus'
+
+  const primaryLabel = running
+    ? 'Pause'
+    : leftMs >= totalMs
+      ? phase === 'focus'
+        ? 'Start focus'
+        : 'Start break'
+      : 'Resume'
+
+  const haloClass = flash ? 'halo halo--flash' : glowing ? 'halo halo--pulse' : 'halo'
 
   return (
     <div className="screen">
@@ -77,7 +107,7 @@ export default function App() {
               type="button"
               className="mode-btn"
               aria-pressed={phase === p}
-              onClick={() => setPhase(p)}
+              onClick={() => timer.pick(p)}
             >
               {p === 'focus' ? 'Focus' : p === 'short' ? 'Short' : 'Long'}
               {phase === p && <span className="mode-underline" aria-hidden="true" />}
@@ -87,7 +117,7 @@ export default function App() {
 
         <main className="main">
           <div className="dial">
-            <div className="halo" aria-hidden="true" />
+            <div className={haloClass} aria-hidden="true" />
             <svg className="dial-svg" viewBox="0 0 392 392" aria-hidden="true">
               <circle className="dial-track" cx="196" cy="196" r={RING_RADIUS} />
               <circle
@@ -132,14 +162,14 @@ export default function App() {
           </div>
 
           <div className="actions">
-            <button type="button" className="btn btn-primary actions-primary">
-              Start focus
+            <button type="button" className="btn btn-primary actions-primary" onClick={timer.toggle}>
+              {primaryLabel}
             </button>
             <div className="actions-row">
-              <button type="button" className="btn btn-ghost actions-secondary">
+              <button type="button" className="btn btn-ghost actions-secondary" onClick={timer.reset}>
                 Reset
               </button>
-              <button type="button" className="btn btn-ghost actions-secondary">
+              <button type="button" className="btn btn-ghost actions-secondary" onClick={timer.skip}>
                 Skip →
               </button>
             </div>
@@ -149,7 +179,7 @@ export default function App() {
         <footer className="footer">
           <div className="stats">
             <div className="stats-left">
-              <span className="stats-minutes">{focusMinutesDone}</span>
+              <span className="stats-minutes">{Math.floor(timer.focusSeconds / 60)}</span>
               <span className="stats-caption">min focused today</span>
             </div>
             <span className="stats-caption">
@@ -163,7 +193,7 @@ export default function App() {
                 type="button"
                 className="picker-btn"
                 aria-pressed={backdrop === b.id}
-                onClick={() => setBackdrop(b.id)}
+                onClick={() => pickBackdrop(b.id)}
               >
                 <span className={`picker-swatch swatch--${b.id}`} aria-hidden="true" />
                 <span className="picker-label">{b.label}</span>

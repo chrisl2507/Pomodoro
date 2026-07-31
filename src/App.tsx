@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Backdrop } from './Backdrop'
 import { BACKDROPS } from './backdrops'
 import { SETTINGS, type BackdropId, type Phase } from './settings'
 import { loadState, saveState } from './storage'
@@ -90,6 +91,7 @@ export default function App() {
 
   return (
     <div className="screen">
+      <Backdrop id={backdrop} />
       <div className="screen-content">
         <header className="header">
           <div className="brand">

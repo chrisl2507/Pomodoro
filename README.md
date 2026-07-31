@@ -1,54 +1,74 @@
-# Nocturne — Focus
+# span_
 
-A one-screen pomodoro timer built to the Nocturne design system: a quiet
-dark ground, Inter with a weight-300 countdown, outlined buttons, and six
-procedural animated backdrops — no image assets.
+trace your attention
 
-Built with Vite + React + TypeScript.
+A Pomodoro timer for Google Play and the App Store, positioned as
+observability for your attention: the timer is the data-collection
+instrument; the insights are the product. Spec and data model live in
+`docs/span/` — `span-design-spec.md` and `span-schema-and-insights.sql`
+(the source of truth for the schema and the seven insight queries).
 
-## Run
+Stack: Vite + React + TypeScript, wrapped with Capacitor for the store
+builds. Local-first — on-device SQLite, no backend, no accounts, no
+network calls.
+
+## Develop (browser)
 
 ```sh
 npm install
-npm run dev        # dev server
-npm run build      # type-check + production build to dist/
+npm run dev        # http://localhost:5173 — sql.js/IndexedDB data layer
+npm run build      # type-check + production build
 npm run preview    # serve the production build
 ```
 
-`node scripts/verify-timer.mjs <url>` runs functional checks against a
-served build (uses the preinstalled Chromium via playwright-core).
+`node scripts/verify-span.mjs <url>` runs 12 functional checks (engine,
+event log, relaunch recovery, SQL views) against a served build using the
+preinstalled Chromium.
 
-## How the timer works
+## Native builds
 
-The engine never accumulates ticks. A running phase is a single `endAt`
-timestamp; remaining time, ring progress and focus-seconds all derive from
-`Date.now()` against it, so tab throttling, dropped frames or a suspended
-page cannot drift the countdown. A dedicated-worker heartbeat keeps
-completion firing in hidden tabs (worker timers aren't throttled), pages
-returning from suspension catch up by chaining completions from the stored
-`endAt`, and completion posts a Notification when the app isn't focused.
+Requires Android Studio and/or Xcode on the building machine:
 
-Sessions completed, seconds focused today (reset on day change), the last
-12 log entries and the chosen backdrop persist in `localStorage`.
+```sh
+npm run android    # build web, cap sync, open Android Studio
+npm run ios        # build web, cap sync, open Xcode
+```
 
-Configurable values (focus 25 / short 5 / long 15 / auto-continue / glow /
-daily goal 8) live in `src/settings.ts`, not in the views.
+On device the app uses `@capacitor-community/sqlite` for storage and
+`@capacitor/local-notifications` for completion alerts: a notification is
+OS-scheduled for `endAt` the moment a session starts (cancelled on pause),
+so completion fires even if the app is suspended or killed. On relaunch
+the engine replays the open session's events and resumes — or completes —
+exactly where the wall clock says. Known v1 quirk: on Android, finishing a
+session with the app foregrounded shows the scheduled notification too.
 
-Keyboard: `Space` start/pause · `R` reset · `S` skip.
+Backup is platform-native (Android Auto Backup via `allowBackup`; iOS
+device backup covers the app container) and `exportEvents()` produces the
+user-facing JSON export — the event log is the backup format.
 
-## Design handoff files
+## Architecture
 
-The handoff arrived at the repo root with scrambled file names. The actual
-contents:
+- `src/db/schema.ts` — runtime copy of the handoff schema. Append-only
+  `events` table is the only thing written; sessions, stats and insights
+  derive by query (`sessions` / `session_pauses` views).
+- `src/db/db.ts` — the `SpanDb` seam: sql.js persisted to IndexedDB on
+  web, the Capacitor SQLite plugin on device.
+- `src/db/queries.ts` — the seven insight queries, verbatim, typed.
+- `src/useTimer.ts` — the engine. A running phase is one `endAt`
+  timestamp; remaining time derives from `Date.now()` against it (no
+  accumulated ticks, no drift). A launch janitor appends `abandon` to
+  stale in-progress sessions.
+- `src/ui/` — Focus and Insights screens. Insights sit behind
+  `FLAGS.insights` (`src/settings.ts`) — the intended paid boundary, not
+  yet finalised. Insight sentences render only past their n ≥ 5 floor.
+- `src/brand.ts` + `capacitor.config.ts` — the only two files a rename
+  touches (trademark checks pending).
+- Design rules (`src/styles/span.css`): dark-first with paper mode,
+  mono for every numeral, two weights, accent reserved for live data,
+  green for positive stat arrows only, no exclamation marks in copy.
 
-| File | Actual content |
-| --- | --- |
-| `support.js` | the HTML design prototype ("Focus Timer.dc.html") |
-| `1-aurora.png` | the Nocturne design-system guide (markdown) |
-| `2-stars.png` | the Nocturne design-system token sheet (CSS) |
-| `README (1).md`, `ios-frame.jsx`, `Focus Timer.dc.html`, `4-embers.png`, `5-rain.png`, `6-ripple.png` | the six screen screenshots (JPEG) |
-| `styles.css` | an empty design-tool bundle stub |
+## Repo history
 
-The tokens are ported to `src/styles/nocturne.css`; the prototype's
-measurements, gradients and keyframe timings are reproduced in
-`src/styles/app.css` and `src/styles/backdrops.css`.
+The repo previously held a Nocturne-branded web pomodoro (see git
+history); its design handoff remains in `design_handoff/`. Span reuses
+its engine discipline and replaces the UI and persistence per the spec.

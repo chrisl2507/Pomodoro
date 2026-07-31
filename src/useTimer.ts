@@ -1,267 +1,224 @@
 import { useEffect, useReducer, useRef } from 'react'
 import { SETTINGS, phaseDurationMs, type Phase } from './settings'
-import { LOG_LIMIT, loadState, saveState, type LogEntry } from './storage'
+import { abandonStaleSessions, appendEvent, findOpenSession } from './db/events'
+import { currentStreakDays, todayStats } from './db/queries'
+import {
+  cancelScheduled,
+  fireNow,
+  requestNotificationPermission,
+  scheduleCompletion,
+} from './notifications'
 import { useTick } from './useTick'
 
-/* The timer never accumulates ticks. A running phase is one timestamp —
-   `endAt` — and everything else derives from `Date.now()` against it, so a
-   throttled tab, a dropped frame or a suspended page cannot drift the
-   countdown. Focus time is likewise derived from segment timestamps. */
+/* The engine keeps the previous app's rule — a running phase is one endAt
+   timestamp and everything derives from Date.now() against it — but its
+   persistence is the append-only events table. Relaunch replays the open
+   session's events back into timestamps, so a killed app resumes (or
+   completes) exactly where the wall clock says it should. */
 
 export type TimerSnapshot = {
+  ready: boolean
   phase: Phase
   running: boolean
-  /** ms remaining in the current phase */
+  /** a session exists for the current phase (running or paused mid-way) */
+  inSession: boolean
   leftMs: number
-  /** full duration of the current phase in ms */
   totalMs: number
-  /** focus sessions completed today */
-  completed: number
-  /** whole seconds focused today */
-  focusSeconds: number
-  log: LogEntry[]
-  /** completion halo flash is active */
-  flash: boolean
+  /** 1-based focus-session number within the current cycle */
+  sessionNumber: number
+  taskLabel: string
+  todayFocusedMinutes: number
+  todayCompleted: number
+  streakDays: number
   toggle: () => void
-  reset: () => void
-  skip: () => void
-  pick: (phase: Phase) => void
+  setTaskLabel: (label: string) => void
 }
 
 type EngineState = {
+  ready: boolean
   phase: Phase
-  /** wall-clock ms when the running phase ends; null while paused */
+  sessionUuid: string | null
+  taskLabel: string
   endAt: number | null
-  /** ms remaining while paused */
   pausedLeftMs: number
-  completed: number
-  /** ms focused today, folded from finished segments */
-  focusMsBase: number
-  /** wall-clock start of the live focus segment; null unless running focus */
-  segmentStart: number | null
-  log: LogEntry[]
-  /** wall-clock ms until which the completion flash shows */
-  flashUntil: number
+  todayFocusedMinutes: number
+  todayCompleted: number
+  streakDays: number
 }
 
-function timeLabel(atMs: number): string {
-  return new Date(atMs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+function completionBody(finished: Phase): string {
+  return finished === 'focus' ? 'Session complete' : 'Break over'
 }
 
-function nextPhaseAfter(phase: Phase, completed: number): Phase {
-  if (phase !== 'focus') return 'focus'
-  return completed % SETTINGS.sessionsPerCycle === 0 ? 'long' : 'short'
-}
-
-/** Fold the live focus segment into the base up to `now`. */
-function fold(s: EngineState, now: number): EngineState {
-  if (s.segmentStart === null) return s
-  const upTo = s.endAt !== null ? Math.min(now, s.endAt) : now
-  return {
-    ...s,
-    focusMsBase: s.focusMsBase + Math.max(0, upTo - s.segmentStart),
-    segmentStart: s.segmentStart === null ? null : upTo,
-  }
-}
-
-/** Complete one phase that ended at `endedAt` and enter the next. */
-function completeOne(s: EngineState, endedAt: number, keepRunning: boolean): EngineState {
-  const wasFocus = s.phase === 'focus'
-  let focusMsBase = s.focusMsBase
-  if (wasFocus && s.segmentStart !== null) {
-    focusMsBase += Math.max(0, endedAt - s.segmentStart)
-  }
-  const completed = wasFocus ? s.completed + 1 : s.completed
-  const entry: LogEntry = {
-    label: wasFocus ? `Focus · ${SETTINGS.focusMinutes}m` : 'Break',
-    at: timeLabel(endedAt),
-  }
-  const phase = nextPhaseAfter(s.phase, completed)
-  const duration = phaseDurationMs(phase)
-  const run = keepRunning && SETTINGS.autoContinue
-  return {
-    ...s,
-    phase,
-    completed,
-    focusMsBase,
-    log: [entry, ...s.log].slice(0, LOG_LIMIT),
-    // The next phase chains from the previous phase's end timestamp, so
-    // back-to-back phases carry no scheduling drift.
-    endAt: run ? endedAt + duration : null,
-    segmentStart: run && phase === 'focus' ? endedAt : null,
-    pausedLeftMs: duration,
-    flashUntil: Date.now() + 900,
-  }
-}
-
-/** Apply every completion whose endAt has already passed (page may have
-    been suspended across several phases). */
-function advance(s: EngineState, now: number): { state: EngineState; completions: number } {
-  let state = s
-  let completions = 0
-  while (state.endAt !== null && state.endAt <= now) {
-    state = completeOne(state, state.endAt, true)
-    completions++
-    if (completions > 64) break // safety valve against a corrupted endAt
-  }
-  return { state, completions }
-}
-
-function notifyPhaseChange(s: EngineState): void {
-  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
-  if (typeof document !== 'undefined' && document.hasFocus()) return
-  const body =
-    s.phase === 'focus'
-      ? 'Break over — back to focus.'
-      : s.phase === 'short'
-        ? 'Focus complete — take a short break.'
-        : 'Focus complete — take a long break.'
-  try {
-    new Notification('Nocturne — Focus', { body, tag: 'noc-focus-phase' })
-  } catch {
-    /* some platforms only allow notifications from service workers */
-  }
+function nextPhase(finished: Phase, todayCompletedAfter: number): Phase {
+  if (finished !== 'focus') return 'focus'
+  return todayCompletedAfter % SETTINGS.sessionsPerCycle === 0 ? 'long_break' : 'short_break'
 }
 
 export function useTimer(): TimerSnapshot {
-  const engine = useRef<EngineState | null>(null)
-  if (engine.current === null) {
-    const saved = loadState()
-    engine.current = {
-      phase: 'focus',
-      endAt: null,
-      pausedLeftMs: phaseDurationMs('focus'),
-      completed: saved.completed,
-      focusMsBase: saved.focusSeconds * 1000,
-      segmentStart: null,
-      log: saved.log,
-      flashUntil: 0,
-    }
-  }
+  const engine = useRef<EngineState>({
+    ready: false,
+    phase: 'focus',
+    sessionUuid: null,
+    taskLabel: '',
+    endAt: null,
+    pausedLeftMs: phaseDurationMs('focus'),
+    todayFocusedMinutes: 0,
+    todayCompleted: 0,
+    streakDays: 0,
+  })
   const [, rerender] = useReducer((n: number) => n + 1, 0)
+  const busy = useRef(false)
   const lastShownSecond = useRef(-1)
 
-  const persist = (s: EngineState) => {
-    saveState({
-      completed: s.completed,
-      focusSeconds: Math.floor(s.focusMsBase / 1000),
-      log: s.log,
-    })
-  }
-
-  const commit = (s: EngineState, save = true) => {
-    engine.current = s
-    if (save) persist(s)
+  const commit = (patch: Partial<EngineState>) => {
+    engine.current = { ...engine.current, ...patch }
     rerender()
   }
 
+  const refreshStats = async () => {
+    const [today, streak] = await Promise.all([todayStats(), currentStreakDays()])
+    commit({
+      todayFocusedMinutes: today.focusedMinutes,
+      todayCompleted: today.completedSessions,
+      streakDays: streak,
+    })
+  }
+
+  const completePhase = async (endedAtMs: number) => {
+    const s = engine.current
+    if (!s.sessionUuid) return
+    const finished = s.phase
+    await appendEvent(s.sessionUuid, 'complete', new Date(endedAtMs))
+    fireNow(completionBody(finished))
+    const completedAfter = finished === 'focus' ? s.todayCompleted + 1 : s.todayCompleted
+    const phase = nextPhase(finished, completedAfter)
+    commit({
+      phase,
+      sessionUuid: null,
+      endAt: null,
+      pausedLeftMs: phaseDurationMs(phase),
+      taskLabel: finished === 'focus' ? '' : s.taskLabel,
+    })
+    await refreshStats()
+  }
+
+  // — init: janitor, then adopt any open session from the event log —
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      await abandonStaleSessions()
+      const open = await findOpenSession()
+      if (cancelled) return
+      if (open) {
+        const plannedMs = open.plannedMinutes * 60_000
+        if (open.pausedSinceMs !== null) {
+          const usedMs = open.pausedSinceMs - open.startedAtMs - open.pausedMsBefore
+          commit({
+            ready: true,
+            phase: open.kind,
+            sessionUuid: open.sessionUuid,
+            taskLabel: open.taskLabel ?? '',
+            endAt: null,
+            pausedLeftMs: Math.max(0, plannedMs - usedMs),
+          })
+        } else {
+          const endAt = open.startedAtMs + plannedMs + open.pausedMsBefore
+          commit({
+            ready: true,
+            phase: open.kind,
+            sessionUuid: open.sessionUuid,
+            taskLabel: open.taskLabel ?? '',
+            endAt,
+            pausedLeftMs: plannedMs,
+          })
+          if (endAt <= Date.now()) await completePhase(endAt)
+        }
+      } else {
+        commit({ ready: true })
+      }
+      await refreshStats()
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   useTick((now) => {
-    const s = engine.current!
+    const s = engine.current
+    if (!s.ready) return
     if (s.endAt !== null && s.endAt <= now) {
-      const { state } = advance(s, now)
-      commit(state)
-      notifyPhaseChange(state)
+      if (busy.current) return
+      busy.current = true
+      completePhase(s.endAt).finally(() => {
+        busy.current = false
+      })
       return
     }
     const leftMs = s.endAt !== null ? s.endAt - now : s.pausedLeftMs
     const second = Math.ceil(leftMs / 1000)
-    const flashing = now < s.flashUntil + 250
-    if (second !== lastShownSecond.current || flashing) {
+    if (second !== lastShownSecond.current) {
       lastShownSecond.current = second
       rerender()
     }
   })
-
-  // A page being closed or backgrounded folds the live focus segment so the
-  // seconds already focused survive a relaunch.
-  useEffect(() => {
-    const flush = () => {
-      const s = engine.current!
-      if (s.segmentStart !== null) {
-        const folded = fold(s, Date.now())
-        engine.current = folded
-        persist(folded)
-      }
-    }
-    window.addEventListener('pagehide', flush)
-    document.addEventListener('visibilitychange', flush)
-    return () => {
-      window.removeEventListener('pagehide', flush)
-      document.removeEventListener('visibilitychange', flush)
-    }
-  }, [])
 
   const s = engine.current
   const now = Date.now()
   const running = s.endAt !== null
   const totalMs = phaseDurationMs(s.phase)
   const leftMs = Math.max(0, running ? s.endAt! - now : s.pausedLeftMs)
-  const liveSegmentMs =
-    s.segmentStart !== null ? Math.max(0, Math.min(now, s.endAt ?? now) - s.segmentStart) : 0
 
   return {
+    ready: s.ready,
     phase: s.phase,
     running,
+    inSession: s.sessionUuid !== null,
     leftMs,
     totalMs,
-    completed: s.completed,
-    focusSeconds: Math.floor((s.focusMsBase + liveSegmentMs) / 1000),
-    log: s.log,
-    flash: now < s.flashUntil,
+    sessionNumber: (s.todayCompleted % SETTINGS.sessionsPerCycle) + 1,
+    taskLabel: s.taskLabel,
+    todayFocusedMinutes: s.todayFocusedMinutes,
+    todayCompleted: s.todayCompleted,
+    streakDays: s.streakDays,
 
     toggle: () => {
-      const t = Date.now()
-      const cur = engine.current!
-      if (cur.endAt !== null) {
-        const folded = fold(cur, t)
-        commit({
-          ...folded,
-          endAt: null,
-          segmentStart: null,
-          pausedLeftMs: Math.max(0, cur.endAt - t),
-        })
-      } else {
-        if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-          Notification.requestPermission().catch(() => {})
+      if (busy.current || !s.ready) return
+      busy.current = true
+      ;(async () => {
+        const t = Date.now()
+        const cur = engine.current
+        if (cur.endAt !== null) {
+          // pause
+          await appendEvent(cur.sessionUuid!, 'pause', new Date(t))
+          await cancelScheduled()
+          commit({ endAt: null, pausedLeftMs: Math.max(0, cur.endAt - t) })
+        } else if (cur.sessionUuid !== null) {
+          // resume
+          await appendEvent(cur.sessionUuid, 'resume', new Date(t))
+          const endAt = t + cur.pausedLeftMs
+          await scheduleCompletion(endAt, completionBody(cur.phase))
+          commit({ endAt })
+        } else {
+          // start a fresh session
+          await requestNotificationPermission()
+          const sessionUuid = crypto.randomUUID()
+          const label = cur.phase === 'focus' && cur.taskLabel.trim() ? cur.taskLabel.trim() : null
+          await appendEvent(sessionUuid, 'start', new Date(t), {
+            kind: cur.phase,
+            plannedMinutes: Math.round(phaseDurationMs(cur.phase) / 60_000),
+            taskLabel: label,
+          })
+          const endAt = t + phaseDurationMs(cur.phase)
+          await scheduleCompletion(endAt, completionBody(cur.phase))
+          commit({ sessionUuid, endAt })
         }
-        commit(
-          {
-            ...cur,
-            endAt: t + cur.pausedLeftMs,
-            segmentStart: cur.phase === 'focus' ? t : null,
-          },
-          false,
-        )
-      }
-    },
-
-    reset: () => {
-      const t = Date.now()
-      const cur = fold(engine.current!, t)
-      commit({
-        ...cur,
-        endAt: null,
-        segmentStart: null,
-        pausedLeftMs: phaseDurationMs(cur.phase),
+      })().finally(() => {
+        busy.current = false
       })
     },
 
-    skip: () => {
-      const t = Date.now()
-      const cur = engine.current!
-      commit(completeOne(cur, Math.min(t, cur.endAt ?? t), true))
-    },
-
-    pick: (phase: Phase) => {
-      const t = Date.now()
-      const cur = fold(engine.current!, t)
-      commit({
-        ...cur,
-        phase,
-        endAt: null,
-        segmentStart: null,
-        pausedLeftMs: phaseDurationMs(phase),
-      })
-    },
+    setTaskLabel: (label: string) => commit({ taskLabel: label }),
   }
 }

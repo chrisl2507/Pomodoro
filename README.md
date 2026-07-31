@@ -38,16 +38,10 @@ Keyboard: `Space` start/pause · `R` reset · `S` skip.
 
 ## Design handoff files
 
-The handoff arrived at the repo root with scrambled file names. The actual
-contents:
-
-| File | Actual content |
-| --- | --- |
-| `support.js` | the HTML design prototype ("Focus Timer.dc.html") |
-| `1-aurora.png` | the Nocturne design-system guide (markdown) |
-| `2-stars.png` | the Nocturne design-system token sheet (CSS) |
-| `README (1).md`, `ios-frame.jsx`, `Focus Timer.dc.html`, `4-embers.png`, `5-rain.png`, `6-ripple.png` | the six screen screenshots (JPEG) |
-| `styles.css` | an empty design-tool bundle stub |
+The handoff arrived with scrambled file names; it now lives in
+`design_handoff/` with every file named for its actual content (prototype,
+design-system guide and tokens, six screenshots). See
+`design_handoff/README.md` for the recovered mapping.
 
 The tokens are ported to `src/styles/nocturne.css`; the prototype's
 measurements, gradients and keyframe timings are reproduced in
